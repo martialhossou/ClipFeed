@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>ClipFeed</title>
+<meta name="description" content="Feed vidéo plein écran façon TikTok : scroll infini, likes, commentaires, partage, profils. Démo front, mobile-first."/>
+<meta name="theme-color" content="#000000"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;700;800;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#ffffff; --muted:#b9bcc6; --bg:#000; --panel:#111318; --line:#23262f; --accent:#fe2c55;
+    --vh:100vh; /* sera mise à jour en JS pour iOS */
+  }
+  *,*::before,*::after{box-sizing:border-box}
+  html,body{height:100%;overscroll-behavior-y:contain}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:#000;color:var(--ink);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans",sans-serif;line-height:1.6;overflow-x:hidden}
+
+  /* ===== Layout ===== */
+  .feed{position:relative;height:var(--vh);width:100%;overflow-y:scroll;scroll-snap-type:y mandatory;scrollbar-width:none}
+  .feed::-webkit-scrollbar{width:0;height:0}
+  .card{position:relative;height:var(--vh);width:100%;scroll-snap-align:start;overflow:hidden;background:#000}
+  video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000}
+  .overlay{position:absolute;inset:0;display:grid;grid-template-columns:1fr auto;align-items:end;padding:16px;pointer-events:none}
+  .left{pointer-events:auto}
+  .right{display:flex;flex-direction:column;align-items:center;gap:16px;pointer-events:auto}
+
+  /* ===== Header top (For You / Following) ===== */
+  header.top{position:fixed;top:0;left:0;right:0;z-index:20;display:flex;justify-content:center;gap:22px;padding:12px 0;background:linear-gradient(180deg,rgba(0,0,0,.7),transparent)}
+  header.top .tab{color:#e5e7ee;font-weight:800;opacity:.6}
+  header.top .tab.active{opacity:1;border-bottom:2px solid #fff;padding-bottom:4px}
+
+  /* ===== Bottom nav (TikTok-like) ===== */
+  nav.tabs{position:fixed;bottom:0;left:0;right:0;z-index:20;background:linear-gradient(0deg,rgba(0,0,0,.75),rgba(0,0,0,.0));padding:10px 8px}
+  .tabs-inner{display:flex;justify-content:space-around;align-items:center}
+  .tabbtn{display:flex;flex-direction:column;align-items:center;gap:4px;color:#e5e7ee;opacity:.85;font-size:12px}
+  .tabbtn svg{width:22px;height:22px}
+
+  /* ===== Left meta (desc + music) ===== */
+  .user{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .user .name{font-weight:900}
+  .badge{display:inline-block;background:#fff;color:#000;border-radius:999px;font-size:10px;font-weight:900;padding:.1rem .4rem;margin-left:6px}
+  .desc{max-width:70vw}
+  .music{display:flex;align-items:center;gap:8px;color:#dcdfea;font-size:14px;opacity:.9;margin-top:6px}
+  .music svg{flex:0 0 18px}
+
+  /* ===== Right column actions ===== */
+  .avatar{width:48px;height:48px;border-radius:999px;border:2px solid #fff;overflow:hidden;background:#222}
+  .avatar img{width:100%;height:100%;object-fit:cover}
+  .action{display:flex;flex-direction:column;align-items:center;gap:6px;color:#fff}
+  .action .btn{width:52px;height:52px;border-radius:999px;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,.2);cursor:pointer}
+  .action .count{font-weight:800;font-size:13px;color:#e8eaf2}
+
+  /* ===== Like heart pulse ===== */
+  .tap-heart{position:absolute;width:92px;height:92px;opacity:0;transform:translate(-50%,-50%) scale(.7);pointer-events:none}
+  .tap-heart.show{animation:pulse .8s ease-out forwards}
+  @keyframes pulse{
+    0%{opacity:.0;transform:translate(-50%,-50%) scale(.5)}
+    25%{opacity:1;transform:translate(-50%,-50%) scale(1)}
+    100%{opacity:0;transform:translate(-50%,-50%) scale(1.4)}
+  }
+
+  /* ===== Comment drawer ===== */
+  .drawer{position:fixed;left:0;right:0;bottom:0;transform:translateY(100%);transition:.28s ease;z-index:30;background:var(--panel);border-top:1px solid var(--line);border-radius:18px 18px 0 0;max-height:80vh;display:flex;flex-direction:column}
+  .drawer.open{transform:translateY(0)}
+  .drawer-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--line)}
+  .drawer-body{padding:10px;overflow:auto}
+  .cmt{display:flex;gap:10px;padding:10px 2px;border-bottom:1px solid #191c22}
+  .cmt .av{width:36px;height:36px;border-radius:999px;overflow:hidden;background:#222;flex:0 0 36px}
+  .cmt .av img{width:100%;height:100%;object-fit:cover}
+  .cmt .meta{font-size:12px;color:#9aa0ad}
+  .cmt .txt{color:#e7e9f2}
+  .drawer-foot{padding:10px;border-top:1px solid var(--line);display:flex;gap:8px}
+  .drawer-foot input{flex:1;border:1px solid #2a2e39;background:#0f1116;color:#e8ecf8;border-radius:999px;padding:.6rem .9rem;outline:none}
+  .drawer-foot button{border:0;background:var(--accent);color:#fff;border-radius:999px;padding:.6rem 1rem;font-weight:900;cursor:pointer}
+
+  /* ===== Mute pill ===== */
+  .mute{position:absolute;top:70px;right:12px;z-index:15;background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:999px;padding:.35rem .65rem;font-weight:800;display:flex;align-items:center;gap:6px}
+
+  /* Safety: small screens */
+  @media (max-width:520px){
+    .desc{max-width:78vw}
+    .action .btn{width:48px;height:48px}
+    .avatar{width:44px;height:44px}
+  }
+</style>
+</head>
+<body>
+
+<!-- Header tabs -->
+<header class="top" aria-label="Navigation principale">
+  <div class="tab active">Pour toi</div>
+  <div class="tab">Abonnements</div>
+</header>
+
+<!-- Feed -->
+<main id="feed" class="feed" aria-label="Fil de vidéos"></main>
+
+<!-- Bottom tabs -->
+<nav class="tabs" aria-label="Onglets">
+  <div class="tabs-inner">
+    <div class="tabbtn" title="Accueil">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l9 8h-3v9h-5v-6H11v6H6v-9H3l9-8z"/></svg><span>Accueil</span>
+    </div>
+    <div class="tabbtn" title="Découvrir">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10.5 3a7.5 7.5 0 1 1 0 15 7.5 7.5 0 0 1 0-15Zm10 18-6-6"/></svg><span>Découvrir</span>
+    </div>
+    <div class="tabbtn" title="Créer">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M11 11V4h2v7h7v2h-7v7h-2v-7H4v-2h7z"/></svg><span>Créer</span>
+    </div>
+    <div class="tabbtn" title="Inbox">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h16v12H4zM2 16h5l2 3h6l2-3h5v4H2z"/></svg><span>Inbox</span>
+    </div>
+    <div class="tabbtn" title="Profil">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12a5 5 0 1 0-5-5 5 5 0 0 0 5 5Zm0 2c-5 0-9 3-9 6v2h18v-2c0-3-4-6-9-6z"/></svg><span>Profil</span>
+    </div>
+  </div>
+</nav>
+
+<!-- Drawer commentaires -->
+<section id="drawer" class="drawer" aria-hidden="true" aria-label="Commentaires">
+  <div class="drawer-head">
+    <strong id="cmtTitle">Commentaires</strong>
+    <button id="cmtClose" style="background:#222;color:#fff;border:1px solid #333;border-radius:10px;padding:.4rem .7rem;cursor:pointer">Fermer ✕</button>
+  </div>
+  <div id="cmtBody" class="drawer-body"></div>
+  <div class="drawer-foot">
+    <input id="cmtInput" placeholder="Ajouter un commentaire…"/>
+    <button id="cmtSend">Envoyer</button>
+  </div>
+</section>
+
+<!-- Heart template -->
+<svg id="heartTpl" class="tap-heart" viewBox="0 0 24 24" fill="#fe2c55" style="position:fixed;left:-9999px;top:-9999px">
+  <path d="M12 21s-6.7-4.4-9.3-7.6C.7 10.9 1 7.3 3.5 5.4 5.9 3.6 9 4.3 12 7c3-2.7 6.1-3.4 8.5-1.6 2.5 1.9 2.8 5.5.8 8-2.6 3.2-9.3 7.6-9.3 7.6z"/>
+</svg>
+
+<script>
+  /* ===== Viewport fix for mobile browsers ===== */
+  function setVH(){document.documentElement.style.setProperty('--vh', window.innerHeight+'px')}
+  setVH(); window.addEventListener('resize',()=>{clearTimeout(window._vh); window._vh=setTimeout(setVH,120)});
+
+  /* ===== Helpers ===== */
+  const $=s=>document.querySelector(s), $$=s=>document.querySelectorAll(s);
+  const feedEl=$("#feed"), drawer=$("#drawer"), cmtBody=$("#cmtBody"), cmtInput=$("#cmtInput");
+  function fmtCount(n){ if(n<1000) return n.toString(); if(n<1000000) return (n/1000).toFixed(1).replace('.0','')+'K'; return (n/1000000).toFixed(1).replace('.0','')+'M'; }
+  function fallbackImg(img, w=200,h=200,txt='Avatar'){ img.onerror=null; img.src=`data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' width='${w}' height='${h}'><rect width='100%' height='100%' fill='#1d2027'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-family='Inter,Arial' font-size='22' fill='#6d7383'>${txt}</text></svg>`)}` }
+
+  /* ===== Dataset (3 vidéos exemples) ===== */
+  const VIDEOS = [
+    {
+      id:'v1',
+      src:'https://www.w3schools.com/html/mov_bbb.mp4', // Big Buck Bunny (démo)
+      poster:'https://picsum.photos/seed/clip-bbb/900/1600',
+      user:{handle:'@nova.design', name:'NOVA Design', avatar:'https://picsum.photos/seed/ava-nova/200/200', verified:true},
+      desc:'Timelapse — setup studio minimal + conseils éclairage 💡',
+      music:'Track — lo-fi breeze',
+      likes:12400, comments:[
+        {u:'@luca', t:'Incroyable ambiance!'},
+        {u:'@mimi', t:'Quels softbox ?'},
+      ],
+    },
+    {
+      id:'v2',
+      src:'https://media.w3.org/2010/05/sintel/trailer.mp4', // Sintel trailer (démo)
+      poster:'https://picsum.photos/seed/clip-sintel/900/1600',
+      user:{handle:'@urban.motion', name:'Urban Motion', avatar:'https://picsum.photos/seed/ava-urban/200/200', verified:false},
+      desc:'Transition “whip pan” en extérieur 🎬 Astuce montage rapide.',
+      music:'Synthwave cut',
+      likes:9800, comments:[
+        {u:'@ana', t:'La transition est clean 🔥'},
+        {u:'@kofi', t:'Quel fps ?'},
+      ],
+    },
+    {
+      id:'v3',
+      src:'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4', // MDN flower (démo)
+      poster:'https://picsum.photos/seed/clip-flower/900/1600',
+      user:{handle:'@cafe.chill', name:'Cafe Chill', avatar:'https://picsum.photos/seed/ava-cafe/200/200', verified:true},
+      desc:'Cappuccino latte art ☕️ “leaf swirl” — tutoriel express',
+      music:'Acoustic loop',
+      likes:4320, comments:[
+        {u:'@jade', t:'Tellement satisfaisant 😍'},
+        {u:'@amin', t:'La mousse paraît parfaite!'},
+      ],
+    }
+  ];
+
+  /* ===== Render one card ===== */
+  function actionBtn(iconPath, label, attrs=''){
+    return `
+    <div class="action">
+      <div class="btn" ${attrs}>${iconPath}</div>
+      <div class="count">${label}</div>
+    </div>`;
+  }
+  const icoHeart=`<svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21s-6.7-4.4-9.3-7.6C.7 10.9 1 7.3 3.5 5.4 5.9 3.6 9 4.3 12 7c3-2.7 6.1-3.4 8.5-1.6 2.5 1.9 2.8 5.5.8 8-2.6 3.2-9.3 7.6-9.3 7.6z"/></svg>`;
+  const icoCmt=`<svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M4 4h16v11H7l-3 3V4z"/></svg>`;
+  const icoShare=`<svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M13 5l6 6-6 6v-4H5v-4h8V5z"/></svg>`;
+  const icoMusic=`<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M9 3v12.26A3.5 3.5 0 1 0 11 18V8h8V3H9z"/></svg>`;
+  const icoMute =`<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm16.5 3a4.5 4.5 0 0 1-2.5 4l1.5 1.5A6.5 6.5 0 0 0 21 12c0-1.8-.7-3.4-1.9-4.6L17.6 9A4.5 4.5 0 0 1 19.5 12z"/></svg>`;
+  const icoUnmute=`<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm10-2a5 5 0 0 1 0 10V7z"/></svg>`;
+
+  function renderCard(data){
+    const v = document.createElement('section');
+    v.className='card';
+    v.dataset.id=data.id;
+    v.innerHTML = `
+      <video playsinline muted preload="none" poster="${data.poster}">
+        <source src="${data.src}" type="video/mp4"/>
+      </video>
+
+      <button class="mute" data-mute title="Son">${icoMute}<span>Muet</span></button>
+
+      <div class="overlay">
+        <div class="left">
+          <div class="user">
+            <span class="name">${data.user.handle}</span>
+            ${data.user.verified?'<span class="badge">Vérifié</span>':''}
+          </div>
+          <div class="desc">${data.desc}</div>
+          <div class="music">${icoMusic}<span>${data.music}</span></div>
+        </div>
+
+        <div class="right">
+          <div class="avatar"><img src="${data.user.avatar}" alt="${data.user.name}" onerror="fallbackImg(this,200,200,'Avatar')"></div>
+          ${actionBtn(icoHeart, fmtCount(data.likes), `data-like`)}
+          ${actionBtn(icoCmt, fmtCount(data.comments.length), `data-comments`)}
+          ${actionBtn(icoShare, 'Partager', `data-share`)}
+        </div>
+      </div>
+    `;
+    return v;
+  }
+
+  /* ===== Mount initial feed ===== */
+  let feedData=[...VIDEOS]; // base
+  function mountInitial(){
+    feedEl.innerHTML='';
+    feedData.forEach(item=>feedEl.appendChild(renderCard(item)));
+    observeAutoPlay();
+  }
+  mountInitial();
+
+  /* ===== Infinite scroll (loop) ===== */
+  const sentinel = document.createElement('div'); sentinel.style.height='1px'; sentinel.style.width='1px';
+  feedEl.appendChild(sentinel);
+  const infObs = new IntersectionObserver((entries)=>{
+    entries.forEach(e=>{
+      if(e.isIntersecting){
+        // Dupliquer les 3 vidéos avec nouveaux ids pour boucle "infinie"
+        const clone = VIDEOS.map(x=>({...x, id: x.id+'-'+Math.random().toString(36).slice(2,7)}));
+        clone.forEach(item=>feedEl.insertBefore(renderCard(item), sentinel));
+        observeAutoPlay(); // remettre l'observer sur les nouvelles vidéos
+      }
+    });
+  }, {root:feedEl, threshold:0.1});
+  infObs.observe(sentinel);
+
+  /* ===== Auto play/pause with IntersectionObserver ===== */
+  let vidObserver;
+  function observeAutoPlay(){
+    if(vidObserver) vidObserver.disconnect();
+    vidObserver = new IntersectionObserver((entries)=>{
+      entries.forEach(entry=>{
+        const video = entry.target;
+        if(entry.isIntersecting){
+          video.play().catch(()=>{}); // autoplay muted OK
+        }else{
+          video.pause();
+        }
+      });
+    }, {root:feedEl, threshold:.75});
+    $$('#feed video').forEach(v=>vidObserver.observe(v));
+  }
+
+  /* ===== Interactions (tap/double-tap like, pause, buttons) ===== */
+  let lastTap=0;
+  feedEl.addEventListener('pointerdown', (ev)=>{
+    const card = ev.target.closest('.card'); if(!card) return;
+    const video = card.querySelector('video');
+    const now = Date.now();
+    if(now - lastTap < 300){
+      // double tap = like + heart
+      toggleLike(card, true);
+      showHeart(ev.clientX, ev.clientY);
+    } else {
+      // single tap toggles play/pause (on pointerup if no double)
+      card._singleTap = setTimeout(()=>{ if(video.paused) video.play(); else video.pause(); }, 280);
+    }
+    lastTap = now;
+  });
+
+  function showHeart(x,y){
+    const tpl=$("#heartTpl").cloneNode(true);
+    tpl.style.left=x+'px'; tpl.style.top=y+'px';
+    tpl.removeAttribute('id'); tpl.classList.add('show');
+    document.body.appendChild(tpl);
+    setTimeout(()=>tpl.remove(), 820);
+  }
+
+  function toggleLike(card, forceLike=false){
+    const likeBtn = card.querySelector('[data-like]');
+    const count = likeBtn.nextElementSibling;
+    if(forceLike || !likeBtn.classList.contains('active')){
+      likeBtn.classList.add('active');
+      likeBtn.style.background='rgba(254,44,85,.9)';
+      likeBtn.innerHTML=icoHeart;
+      const cur = toNumber(count.textContent);
+      count.textContent = fmtCount(cur+1);
+    } else {
+      likeBtn.classList.remove('active');
+      likeBtn.style.background='rgba(0,0,0,.35)';
+      likeBtn.innerHTML=icoHeart;
+      const cur = toNumber(count.textContent);
+      count.textContent = fmtCount(Math.max(0,cur-1));
+    }
+  }
+  function toNumber(s){ if(s.endsWith('K')) return Math.round(parseFloat(s)*1000); if(s.endsWith('M')) return Math.round(parseFloat(s)*1000000); return parseInt(s||'0',10)||0; }
+
+  document.body.addEventListener('click', (e)=>{
+    const like = e.target.closest('[data-like]');
+    const cmt  = e.target.closest('[data-comments]');
+    const share= e.target.closest('[data-share]');
+    const mute = e.target.closest('[data-mute]');
+    if(like){
+      const card = like.closest('.card'); toggleLike(card);
+    }
+    if(cmt){
+      const card = cmt.closest('.card'); openComments(card.dataset.id);
+    }
+    if(share){
+      const card = share.closest('.card'); doShare(card.dataset.id);
+    }
+    if(mute){
+      const card = mute.closest('.card'); const v=card.querySelector('video'); v.muted=!v.muted;
+      mute.innerHTML = (v.muted?`<?xml version="1.0"?><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm16.5 3a4.5 4.5 0 0 1-2.5 4l1.5 1.5A6.5 6.5 0 0 0 21 12c0-1.8-.7-3.4-1.9-4.6L17.6 9A4.5 4.5 0 0 1 19.5 12z"/></svg><span>Muet</span>`:`<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm10-2a5 5 0 0 1 0 10V7z"/></svg><span>Son</span>`);
+    }
+  });
+
+  /* ===== Comments drawer ===== */
+  let currentVideoId=null;
+  function openComments(id){
+    currentVideoId=id;
+    const data = findDataById(id);
+    $("#cmtTitle").textContent = `Commentaires — ${data.user.handle}`;
+    cmtBody.innerHTML = data.comments.map(renderComment).join('');
+    drawer.classList.add('open'); drawer.setAttribute('aria-hidden','false');
+    setTimeout(()=>cmtInput.focus(), 50);
+  }
+  function closeComments(){ drawer.classList.remove('open'); drawer.setAttribute('aria-hidden','true'); }
+  $("#cmtClose").addEventListener('click', closeComments);
+  $("#cmtSend").addEventListener('click', sendComment);
+  cmtInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); sendComment(); } });
+  function renderComment(c){ return `
+    <div class="cmt">
+      <div class="av"><img src="https://picsum.photos/seed/${encodeURIComponent(c.u)}/80/80" onerror="fallbackImg(this,80,80,'U')" alt=""></div>
+      <div>
+        <div class="meta"><strong>${c.u}</strong></div>
+        <div class="txt">${c.t}</div>
+      </div>
+    </div>`; }
+  function findDataById(id){ return feedData.find(d=>id.startsWith(d.id)) || VIDEOS.find(d=>id===d.id) || VIDEOS[0]; }
+  function sendComment(){
+    const txt = cmtInput.value.trim(); if(!txt) return;
+    const data = findDataById(currentVideoId);
+    data.comments.push({u:'@vous', t:txt});
+    cmtBody.insertAdjacentHTML('beforeend', renderComment({u:'@vous', t:txt}));
+    cmtInput.value='';
+    // incrémenter le compteur sur la carte visible
+    const card = [...$$('.card')].find(c=>c.dataset.id===currentVideoId);
+    if(card){ const cmtCount = card.querySelector('[data-comments] + .count'); cmtCount.textContent = fmtCount(toNumber(cmtCount.textContent)+1); }
+  }
+
+  /* ===== Share ===== */
+  async function doShare(id){
+    const url = location.href.split('#')[0] + '#' + id;
+    try{
+      if(navigator.share){ await navigator.share({title:'ClipFeed — Démo', text:'Regarde cette vidéo', url}); }
+      else{
+        await navigator.clipboard.writeText(url);
+        alert('Lien copié 👍');
+      }
+    }catch(e){ /* ignore */ }
+  }
+
+  /* ===== Improve tap vs double-tap (cancel single on double) ===== */
+  document.addEventListener('pointerup', (e)=>{
+    const card = e.target.closest('.card'); if(card && card._singleTap){ clearTimeout(card._singleTap); card._singleTap=null; }
+  });
+
+  /* ===== Ensure avatars/posters never break ===== */
+  window.addEventListener('load', ()=>{
+    $$('img').forEach(img=>{ img.referrerPolicy='no-referrer'; img.onerror=()=>fallbackImg(img); });
+  });
+</script>
+</body>
+</html>
